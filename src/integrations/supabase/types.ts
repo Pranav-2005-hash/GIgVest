@@ -163,6 +163,8 @@ export type Database = {
           date: string
           description: string | null
           id: string
+          round_up_amount: number
+          round_up_applied: boolean
           type: string
           updated_at: string
           user_id: string
@@ -174,6 +176,8 @@ export type Database = {
           date?: string
           description?: string | null
           id?: string
+          round_up_amount?: number
+          round_up_applied?: boolean
           type: string
           updated_at?: string
           user_id: string
@@ -185,6 +189,8 @@ export type Database = {
           date?: string
           description?: string | null
           id?: string
+          round_up_amount?: number
+          round_up_applied?: boolean
           type?: string
           updated_at?: string
           user_id?: string
