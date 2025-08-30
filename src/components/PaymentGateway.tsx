@@ -123,6 +123,22 @@ const PaymentGateway = () => {
 
       setPaymentResult(data);
       
+      // Save transaction to database
+      try {
+        await supabase.functions.invoke('transactions', {
+          body: {
+            amount: data.originalAmount,
+            category: 'Payment',
+            date: new Date().toISOString().split('T')[0],
+            description: `Payment Gateway Transaction - Card ****${data.cardLast4}`,
+            type: 'debit'
+          }
+        });
+      } catch (transactionError) {
+        console.error('Error saving transaction:', transactionError);
+        // Don't fail the payment if transaction logging fails
+      }
+      
       // Send receipt email if user is authenticated
       if (user?.email) {
         try {

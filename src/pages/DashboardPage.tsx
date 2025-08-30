@@ -1,5 +1,7 @@
 import { useAuth } from '@/hooks/useAuth';
+import { useState, useEffect } from 'react';
 import AuthenticatedHeader from '@/components/AuthenticatedHeader';
+import TransactionHistory from '@/components/TransactionHistory';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,24 +20,66 @@ import {
   Home
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 const DashboardPage = () => {
   const { user, signOut } = useAuth();
+  const [dashboardData, setDashboardData] = useState({
+    totalSavings: 0,
+    totalTransactions: 0,
+    roundUpSavings: 0,
+    recentTransactions: [] as any[]
+  });
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    if (user) {
+      fetchDashboardData();
+    }
+  }, [user]);
+
+  const fetchDashboardData = async () => {
+    try {
+      // Fetch savings data
+      const { data: savingsData } = await supabase
+        .from('savings')
+        .select('current_amount')
+        .eq('user_id', user?.id)
+        .eq('status', 'active')
+        .single();
+
+      // Fetch recent transactions
+      const { data: transactionsData } = await supabase.functions.invoke('transactions', {
+        method: 'GET'
+      });
+
+      const transactions = transactionsData?.transactions || [];
+      const roundUpTotal = transactions.reduce((sum: number, t: any) => 
+        sum + (t.round_up_applied ? Number(t.round_up_amount) : 0), 0
+      );
+
+      setDashboardData({
+        totalSavings: Number(savingsData?.current_amount) || 0,
+        totalTransactions: transactions.length,
+        roundUpSavings: roundUpTotal,
+        recentTransactions: transactions.slice(0, 5)
+      });
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Mock data for features not yet implemented
   const mockData = {
     portfolioValue: 25420.50,
     monthlyGrowth: 8.2,
     creditScore: 742,
     savings: {
-      emergency: { current: 5000, target: 10000 },
+      emergency: { current: dashboardData.totalSavings, target: 10000 },
       vacation: { current: 2500, target: 5000 },
-    },
-    recentTransactions: [
-      { id: 1, type: 'income', amount: 3200, description: 'Freelance Payment', date: '2024-01-15', category: 'Work' },
-      { id: 2, type: 'expense', amount: -85.50, description: 'Grocery Shopping', date: '2024-01-14', category: 'Food' },
-      { id: 3, type: 'investment', amount: 500, description: 'Stock Purchase', date: '2024-01-13', category: 'Investment' },
-      { id: 4, type: 'expense', amount: -120, description: 'Internet Bill', date: '2024-01-12', category: 'Utilities' },
-    ]
+    }
   };
 
   return (
@@ -51,10 +95,10 @@ const DashboardPage = () => {
               <Wallet className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${mockData.portfolioValue.toLocaleString()}</div>
+              <div className="text-2xl font-bold">₹{dashboardData.totalSavings.toFixed(2)}</div>
               <p className="text-xs text-success flex items-center">
                 <TrendingUp className="h-3 w-3 mr-1" />
-                +{mockData.monthlyGrowth}% this month
+                Round-up savings growing
               </p>
             </CardContent>
           </Card>
@@ -121,36 +165,41 @@ const DashboardPage = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {mockData.recentTransactions.slice(0, 5).map((transaction) => (
-                      <div key={transaction.id} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className={`p-2 rounded-full ${
-                            transaction.type === 'income' ? 'bg-success/10' :
-                            transaction.type === 'investment' ? 'bg-accent/10' : 'bg-destructive/10'
-                          }`}>
-                            {transaction.type === 'income' ? (
-                              <ArrowUpRight className="h-4 w-4 text-success" />
-                            ) : transaction.type === 'investment' ? (
-                              <TrendingUp className="h-4 w-4 text-accent" />
-                            ) : (
-                              <ArrowDownLeft className="h-4 w-4 text-destructive" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium">{transaction.description}</p>
-                            <p className="text-sm text-muted-foreground">{transaction.category}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className={`font-semibold ${
-                            transaction.type === 'income' ? 'text-success' : 'text-foreground'
-                          }`}>
-                            {transaction.type === 'income' ? '+' : ''}${Math.abs(transaction.amount).toLocaleString()}
-                          </p>
-                          <p className="text-sm text-muted-foreground">{transaction.date}</p>
-                        </div>
+                    {loading ? (
+                      <div className="text-center py-4 text-muted-foreground">Loading recent activity...</div>
+                    ) : dashboardData.recentTransactions.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground">
+                        No transactions yet. Start making payments to see activity here!
                       </div>
-                    ))}
+                    ) : (
+                      dashboardData.recentTransactions.map((transaction: any) => (
+                        <div key={transaction.id} className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className={`p-2 rounded-full ${
+                              transaction.type === 'credit' ? 'bg-success/10' : 'bg-destructive/10'
+                            }`}>
+                              {transaction.type === 'credit' ? (
+                                <ArrowUpRight className="h-4 w-4 text-success" />
+                              ) : (
+                                <ArrowDownLeft className="h-4 w-4 text-destructive" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium">{transaction.description || 'Transaction'}</p>
+                              <p className="text-sm text-muted-foreground">{transaction.category}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`font-semibold ${
+                              transaction.type === 'credit' ? 'text-success' : 'text-foreground'
+                            }`}>
+                              {transaction.type === 'credit' ? '+' : '-'}₹{Math.abs(transaction.amount).toFixed(2)}
+                            </p>
+                            <p className="text-sm text-muted-foreground">{new Date(transaction.date).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -193,45 +242,7 @@ const DashboardPage = () => {
           </TabsContent>
 
           <TabsContent value="transactions">
-            <Card>
-              <CardHeader>
-                <CardTitle>All Transactions</CardTitle>
-                <CardDescription>Complete transaction history</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {mockData.recentTransactions.map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <div className={`p-2 rounded-full ${
-                          transaction.type === 'income' ? 'bg-success/10' :
-                          transaction.type === 'investment' ? 'bg-accent/10' : 'bg-destructive/10'
-                        }`}>
-                          {transaction.type === 'income' ? (
-                            <ArrowUpRight className="h-4 w-4 text-success" />
-                          ) : transaction.type === 'investment' ? (
-                            <TrendingUp className="h-4 w-4 text-accent" />
-                          ) : (
-                            <ArrowDownLeft className="h-4 w-4 text-destructive" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-medium">{transaction.description}</p>
-                          <p className="text-sm text-muted-foreground">{transaction.category} • {transaction.date}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={`font-semibold ${
-                          transaction.type === 'income' ? 'text-success' : 'text-foreground'
-                        }`}>
-                          {transaction.type === 'income' ? '+' : ''}${Math.abs(transaction.amount).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <TransactionHistory />
           </TabsContent>
 
           <TabsContent value="savings">
