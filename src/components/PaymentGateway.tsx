@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 
 interface PaymentResult {
   success: boolean;
@@ -54,6 +55,7 @@ const PaymentGateway = () => {
   const [loading, setLoading] = useState(false);
   const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const formatCardNumber = (value: string) => {
     const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
@@ -120,10 +122,42 @@ const PaymentGateway = () => {
       }
 
       setPaymentResult(data);
-      toast({
-        title: 'Payment Successful',
-        description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}`,
-      });
+      
+      // Send receipt email if user is authenticated
+      if (user?.email) {
+        try {
+          await supabase.functions.invoke('send-receipt', {
+            body: {
+              email: user.email,
+              transactionId: data.transactionId,
+              originalAmount: data.originalAmount,
+              roundUpAmount: data.roundUpAmount,
+              totalAmount: data.totalAmount,
+              processingFee: data.processingFee,
+              cardLast4: data.cardLast4,
+              timestamp: data.timestamp,
+              blockchain: data.blockchain,
+              savings: data.savings
+            }
+          });
+          
+          toast({
+            title: 'Payment Successful',
+            description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt sent to ${user.email}`,
+          });
+        } catch (emailError) {
+          console.error('Error sending receipt:', emailError);
+          toast({
+            title: 'Payment Successful',
+            description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt email failed to send.`,
+          });
+        }
+      } else {
+        toast({
+          title: 'Payment Successful',
+          description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}`,
+        });
+      }
     } catch (error) {
       console.error('Payment error:', error);
       toast({

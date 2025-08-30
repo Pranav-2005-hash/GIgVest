@@ -1,4 +1,5 @@
 import { useAuth } from '@/hooks/useAuth';
+import AuthenticatedHeader from '@/components/AuthenticatedHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -90,32 +91,7 @@ const CommunityPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Link to="/" className="flex items-center space-x-2">
-              <Home className="h-5 w-5" />
-              <span className="font-bold text-xl">GigVest</span>
-            </Link>
-            <Badge variant="secondary">Community</Badge>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Link to="/dashboard">
-              <Button variant="outline" size="sm">
-                Dashboard
-              </Button>
-            </Link>
-            <span className="text-sm text-muted-foreground">
-              {user?.user_metadata?.first_name || user?.email}
-            </span>
-            <Button variant="outline" size="sm" onClick={signOut}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Sign Out
-            </Button>
-          </div>
-        </div>
-      </header>
+      <AuthenticatedHeader />
 
       <div className="container mx-auto px-4 py-8">
         {/* Community Stats */}
