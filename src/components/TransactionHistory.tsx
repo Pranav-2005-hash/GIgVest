@@ -19,7 +19,7 @@ interface Transaction {
   category: string;
   date: string;
   description: string;
-  type: 'debit' | 'credit';
+  type: 'income' | 'expense' | 'savings' | 'investment';
   round_up_amount: number;
   round_up_applied: boolean;
   created_at: string;
@@ -39,8 +39,16 @@ const TransactionHistory = () => {
     }
 
     // Listen for transaction completion events to refresh the list
-    const handleTransactionCompleted = () => {
-      console.log('Transaction completed, refreshing transaction history');
+    const handleTransactionCompleted = (event: any) => {
+      console.log('Transaction completed, refreshing transaction history', event.detail);
+      if (user) {
+        fetchTransactions();
+        fetchSavingsTotal();
+      }
+    };
+
+    const handleDashboardRefresh = (event: any) => {
+      console.log('Dashboard refresh event received in transaction history', event.detail);
       if (user) {
         fetchTransactions();
         fetchSavingsTotal();
@@ -48,9 +56,11 @@ const TransactionHistory = () => {
     };
 
     window.addEventListener('transactionCompleted', handleTransactionCompleted);
+    window.addEventListener('dashboardRefresh', handleDashboardRefresh);
     
     return () => {
       window.removeEventListener('transactionCompleted', handleTransactionCompleted);
+      window.removeEventListener('dashboardRefresh', handleDashboardRefresh);
     };
   }, [user]);
 
@@ -98,14 +108,14 @@ const TransactionHistory = () => {
   };
 
   const getTransactionIcon = (type: string) => {
-    if (type === 'credit') {
+    if (type === 'income' || type === 'savings') {
       return <ArrowUpRight className="h-4 w-4 text-success" />;
     }
     return <ArrowDownLeft className="h-4 w-4 text-destructive" />;
   };
 
   const getTransactionColor = (type: string) => {
-    if (type === 'credit') {
+    if (type === 'income' || type === 'savings') {
       return 'bg-success/10';
     }
     return 'bg-destructive/10';
@@ -230,9 +240,9 @@ const TransactionHistory = () => {
                   </div>
                   <div className="text-right">
                     <p className={`font-semibold ${
-                      transaction.type === 'credit' ? 'text-success' : 'text-foreground'
+                      transaction.type === 'income' || transaction.type === 'savings' ? 'text-success' : 'text-foreground'
                     }`}>
-                      {transaction.type === 'credit' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                      {transaction.type === 'income' || transaction.type === 'savings' ? '+' : '-'}{formatCurrency(transaction.amount)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(transaction.created_at).toLocaleTimeString()}

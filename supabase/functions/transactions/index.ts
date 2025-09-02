@@ -10,7 +10,7 @@ interface TransactionData {
   category: string;
   date: string;
   description?: string;
-  type: 'debit' | 'credit';
+  type: 'income' | 'expense' | 'savings' | 'investment';
 }
 
 function calculateRoundUp(amount: number): { roundUpAmount: number; roundUpApplied: boolean } {
@@ -33,28 +33,29 @@ Deno.serve(async (req) => {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: {
+            Authorization: req.headers.get('Authorization') ?? '',
+          },
+        },
+      }
     );
 
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Missing authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get user from token
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
+    // Get user from the request context (JWT is already verified by Supabase)
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     
     if (authError || !user) {
+      console.error('Auth error:', authError);
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Unauthorized', details: authError?.message }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     if (req.method === 'GET') {
+      console.log('Fetching transactions for user:', user.id);
+      
       // Fetch all transactions for the user
       const { data: transactions, error } = await supabaseClient
         .from('transactions')
@@ -65,60 +66,80 @@ Deno.serve(async (req) => {
       if (error) {
         console.error('Error fetching transactions:', error);
         return new Response(
-          JSON.stringify({ error: 'Failed to fetch transactions' }),
+          JSON.stringify({ 
+            error: 'Failed to fetch transactions', 
+            details: error.message,
+            code: error.code 
+          }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      console.log('Successfully fetched transactions:', transactions?.length || 0);
       return new Response(
-        JSON.stringify({ transactions }),
+        JSON.stringify({ transactions: transactions || [] }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     if (req.method === 'POST') {
+      console.log('Creating transaction for user:', user.id);
+      
       const body: TransactionData = await req.json();
+      console.log('Transaction data:', body);
       
       if (!body.amount || !body.category || !body.date || !body.type) {
+        console.error('Missing required fields:', { amount: body.amount, category: body.category, date: body.date, type: body.type });
         return new Response(
           JSON.stringify({ error: 'Missing required fields: amount, category, date, type' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // Calculate round-up for debit transactions
+      // Calculate round-up for expense transactions
       let roundUpAmount = 0;
       let roundUpApplied = false;
       
-      if (body.type === 'debit') {
+      if (body.type === 'expense') {
         const roundUp = calculateRoundUp(body.amount);
         roundUpAmount = roundUp.roundUpAmount;
         roundUpApplied = roundUp.roundUpApplied;
       }
 
       // Insert the transaction
+      const transactionData = {
+        user_id: user.id,
+        amount: body.amount,
+        category: body.category,
+        date: body.date,
+        description: body.description || '',
+        type: body.type,
+        round_up_amount: roundUpAmount,
+        round_up_applied: roundUpApplied,
+      };
+      
+      console.log('Inserting transaction:', transactionData);
+      
       const { data: transaction, error: transactionError } = await supabaseClient
         .from('transactions')
-        .insert({
-          user_id: user.id,
-          amount: body.amount,
-          category: body.category,
-          date: body.date,
-          description: body.description || '',
-          type: body.type,
-          round_up_amount: roundUpAmount,
-          round_up_applied: roundUpApplied,
-        })
+        .insert(transactionData)
         .select()
         .single();
 
       if (transactionError) {
         console.error('Error creating transaction:', transactionError);
         return new Response(
-          JSON.stringify({ error: 'Failed to create transaction' }),
+          JSON.stringify({ 
+            error: 'Failed to create transaction', 
+            details: transactionError.message,
+            code: transactionError.code,
+            hint: transactionError.hint
+          }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+
+      console.log('Transaction created successfully:', transaction);
 
       // Update savings if round-up was applied
       if (roundUpApplied && roundUpAmount > 0) {

@@ -7,7 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+const resendApiKey = Deno.env.get("RESEND_API_KEY");
+if (!resendApiKey) {
+  console.error("RESEND_API_KEY environment variable is not set");
+}
+
+const resend = new Resend(resendApiKey);
 
 interface ReceiptData {
   email: string;
@@ -137,6 +142,16 @@ serve(async (req) => {
     }
 
     console.log('Sending receipt to:', receiptData.email);
+
+    if (!resendApiKey) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Email service not configured - RESEND_API_KEY missing',
+          success: false 
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const emailResponse = await resend.emails.send({
       from: "GigVest Payments <noreply@resend.dev>",

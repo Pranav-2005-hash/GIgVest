@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Calculator, 
   IndianRupee, 
@@ -14,7 +15,12 @@ import {
   TrendingUp,
   PiggyBank,
   Shield,
-  Coins
+  Coins,
+  CheckCircle,
+  AlertCircle,
+  RefreshCw,
+  ArrowRight,
+  Target
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -36,12 +42,116 @@ interface RoundUpResult {
   };
 }
 
+interface DashboardStats {
+  totalSavings: number;
+  totalTransactions: number;
+  roundUpSavings: number;
+  monthlySpending: number;
+}
+
 const SimulatorPage = () => {
   const [amount, setAmount] = useState<string>('');
   const [roundUpResult, setRoundUpResult] = useState<RoundUpResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+
+  // Fetch dashboard stats
+  const fetchDashboardStats = async () => {
+    if (!user) return;
+    
+    setStatsLoading(true);
+    try {
+      console.log('Fetching dashboard stats for simulator...');
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        console.error('No session available for stats fetch');
+        return;
+      }
+
+      // Fetch transactions
+      const { data: transactionsData, error: transactionsError } = await supabase.functions.invoke('transactions', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      });
+
+      if (transactionsError) {
+        console.error('Error fetching transactions for stats:', transactionsError);
+        return;
+      }
+
+      const transactions = transactionsData?.transactions || [];
+      
+      // Fetch savings data
+      const { data: savingsData, error: savingsError } = await supabase
+        .from('savings')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active');
+
+      if (savingsError) {
+        console.error('Error fetching savings for stats:', savingsError);
+      }
+
+      const savings = savingsData || [];
+      
+      // Calculate stats
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      const monthlyTransactions = transactions.filter(t => {
+        const transactionDate = new Date(t.date);
+        return transactionDate.getMonth() === currentMonth && transactionDate.getFullYear() === currentYear;
+      });
+
+      const monthlySpending = monthlyTransactions
+        .filter(t => t.type === 'expense')
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+
+      const totalRoundUps = transactions.reduce((sum, t) => 
+        sum + (t.round_up_applied ? Number(t.round_up_amount) : 0), 0
+      );
+
+      const totalSavings = savings.reduce((sum, s) => sum + Number(s.current_amount), 0);
+
+      const stats: DashboardStats = {
+        totalSavings,
+        totalTransactions: transactions.length,
+        roundUpSavings: totalRoundUps,
+        monthlySpending
+      };
+
+      console.log('Dashboard stats fetched:', stats);
+      setDashboardStats(stats);
+      
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  // Listen for transaction completion events
+  useEffect(() => {
+    if (user) {
+      fetchDashboardStats();
+    }
+
+    const handleTransactionCompleted = (event: any) => {
+      console.log('Transaction completed, refreshing simulator stats', event.detail);
+      fetchDashboardStats();
+    };
+
+    window.addEventListener('transactionCompleted', handleTransactionCompleted);
+    
+    return () => {
+      window.removeEventListener('transactionCompleted', handleTransactionCompleted);
+    };
+  }, [user]);
 
   const calculateRoundUp = async () => {
     if (!amount || isNaN(Number(amount))) {
@@ -73,8 +183,8 @@ const SimulatorPage = () => {
       const monthlySavings = dailySavings * 30;
       const yearlySavings = dailySavings * 365;
       
-      // Simulate total saved to date
-      const totalSaved = Math.floor(Math.random() * 5000) + roundUpAmount;
+      // Use real data if available, otherwise simulate
+      const totalSaved = dashboardStats?.roundUpSavings || Math.floor(Math.random() * 5000) + roundUpAmount;
       
       // Calculate next savings milestone
       const nextTarget = Math.ceil(totalSaved / 1000) * 1000;
@@ -126,6 +236,58 @@ const SimulatorPage = () => {
               Advanced round-up calculator, secure payment processing, and AI-powered financial assistance
             </p>
           </div>
+
+          {/* Dashboard Stats Overview */}
+          {user && (
+            <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="h-5 w-5" />
+                  Your Financial Overview
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={fetchDashboardStats}
+                    disabled={statsLoading}
+                    className="ml-auto"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${statsLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {statsLoading ? (
+                  <div className="text-center py-4">Loading your financial data...</div>
+                ) : dashboardStats ? (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-white/50 rounded-lg">
+                      <div className="text-lg font-bold text-blue-600">₹{dashboardStats.totalSavings.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Total Savings</div>
+                    </div>
+                    <div className="text-center p-3 bg-white/50 rounded-lg">
+                      <div className="text-lg font-bold text-green-600">₹{dashboardStats.roundUpSavings.toFixed(2)}</div>
+                      <div className="text-xs text-muted-foreground">Round-Up Savings</div>
+                    </div>
+                    <div className="text-center p-3 bg-white/50 rounded-lg">
+                      <div className="text-lg font-bold text-orange-600">₹{dashboardStats.monthlySpending.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Monthly Spending</div>
+                    </div>
+                    <div className="text-center p-3 bg-white/50 rounded-lg">
+                      <div className="text-lg font-bold text-purple-600">{dashboardStats.totalTransactions}</div>
+                      <div className="text-xs text-muted-foreground">Total Transactions</div>
+                    </div>
+                  </div>
+                ) : (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      No financial data available yet. Make your first transaction to see your overview here!
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Tabs defaultValue="simulator" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
@@ -288,10 +450,21 @@ const SimulatorPage = () => {
             </TabsContent>
 
             <TabsContent value="payment">
-              <PaymentGateway onTransactionSuccess={() => {
-                // Refresh any simulator data if needed
-                console.log('Payment completed in simulator');
-              }} />
+              <div className="space-y-4">
+                <Alert>
+                  <CheckCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Complete a payment to see your dashboard update in real-time! Your transaction will be automatically saved and your savings will be updated.
+                  </AlertDescription>
+                </Alert>
+                <PaymentGateway onTransactionSuccess={() => {
+                  console.log('Payment completed in simulator - dashboard will update automatically');
+                  toast({
+                    title: 'Payment Successful!',
+                    description: 'Your dashboard has been updated with the new transaction.',
+                  });
+                }} />
+              </div>
             </TabsContent>
 
             <TabsContent value="chatbot">

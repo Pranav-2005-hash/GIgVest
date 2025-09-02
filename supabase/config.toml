@@ -33,3 +33,9 @@ verify_jwt = false
 
 [functions.send-receipt]
 verify_jwt = false
+
+[functions.income-prediction]
+verify_jwt = true
+
+[functions.credit-score]
+verify_jwt = true

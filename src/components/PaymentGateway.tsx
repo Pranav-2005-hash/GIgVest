@@ -131,13 +131,16 @@ const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
+          console.log('Saving transaction to database...');
+          
+          // Try Edge Function first
           const transactionResult = await supabase.functions.invoke('transactions', {
             body: {
               amount: data.originalAmount,
               category: 'Payment',
               date: new Date().toISOString().split('T')[0],
               description: `Payment Gateway Transaction - Card ****${data.cardLast4}`,
-              type: 'debit'
+              type: 'expense'
             },
             headers: {
               Authorization: `Bearer ${session.access_token}`,
@@ -145,19 +148,65 @@ const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
           });
           
           if (transactionResult.error) {
-            console.error('Transaction save error:', transactionResult.error);
+            console.warn('Edge Function failed, trying direct database insert:', transactionResult.error);
+            
+            // Fallback to direct database insert
+            const { data: directTransaction, error: directError } = await supabase
+              .from('transactions')
+              .insert({
+                user_id: user?.id,
+                amount: data.originalAmount,
+                category: 'Payment',
+                date: new Date().toISOString().split('T')[0],
+                description: `Payment Gateway Transaction - Card ****${data.cardLast4}`,
+                type: 'expense',
+                round_up_amount: data.roundUpAmount,
+                round_up_applied: data.roundUpAmount > 0
+              })
+              .select()
+              .single();
+            
+            if (directError) {
+              console.error('Direct database insert also failed:', directError);
+              toast({
+                title: 'Payment Successful',
+                description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Note: Transaction logging failed.`,
+              });
+            } else {
+              console.log('Transaction saved successfully via direct insert:', directTransaction);
+            }
           } else {
-            console.log('Transaction saved successfully:', transactionResult.data);
+            console.log('Transaction saved successfully via Edge Function:', transactionResult.data);
           }
+        } else {
+          console.error('No session available for transaction saving');
         }
       } catch (transactionError) {
         console.error('Error saving transaction:', transactionError);
         // Don't fail the payment if transaction logging fails
+        toast({
+          title: 'Payment Successful',
+          description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Note: Transaction logging failed.`,
+        });
       }
       
       // Trigger dashboard refresh by dispatching a custom event
+      console.log('Dispatching transactionCompleted event with ID:', data.transactionId);
       window.dispatchEvent(new CustomEvent('transactionCompleted', { 
-        detail: { transactionId: data.transactionId } 
+        detail: { 
+          transactionId: data.transactionId,
+          amount: data.totalAmount,
+          roundUpAmount: data.roundUpAmount,
+          timestamp: new Date().toISOString()
+        } 
+      }));
+      
+      // Also dispatch a more specific event for dashboard components
+      window.dispatchEvent(new CustomEvent('dashboardRefresh', { 
+        detail: { 
+          transactionId: data.transactionId,
+          type: 'payment_completed'
+        } 
       }));
       
       // Trigger dashboard refresh callback if provided
@@ -168,7 +217,18 @@ const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
       // Send receipt email if user is authenticated
       if (user?.email) {
         try {
+          console.log('Attempting to send receipt email to:', user.email);
           const { data: { session: emailSession } } = await supabase.auth.getSession();
+          
+          if (!emailSession?.access_token) {
+            console.error('No access token available for email sending');
+            toast({
+              title: 'Payment Successful',
+              description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. No authentication token for email.`,
+            });
+            return;
+          }
+          
           const emailResult = await supabase.functions.invoke('send-receipt', {
             body: {
               email: user.email,
@@ -182,9 +242,9 @@ const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
               blockchain: data.blockchain,
               savings: data.savings
             },
-            headers: emailSession?.access_token ? {
+            headers: {
               Authorization: `Bearer ${emailSession.access_token}`,
-            } : {}
+            }
           });
           
           console.log('Email receipt result:', emailResult);
@@ -193,7 +253,7 @@ const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
             console.error('Receipt email error:', emailResult.error);
             toast({
               title: 'Payment Successful',
-              description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt email could not be sent.`,
+              description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt email could not be sent: ${emailResult.error.message || 'Unknown error'}`,
             });
           } else {
             toast({
@@ -205,10 +265,11 @@ const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
           console.error('Error sending receipt:', emailError);
           toast({
             title: 'Payment Successful',
-            description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt email failed to send.`,
+            description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt email failed to send: ${emailError instanceof Error ? emailError.message : 'Unknown error'}`,
           });
         }
       } else {
+        console.log('No user email available for receipt sending');
         toast({
           title: 'Payment Successful',
           description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}`,
