@@ -36,6 +36,20 @@ const DashboardPage = () => {
     if (user) {
       fetchDashboardData();
     }
+
+    // Listen for transaction completion events
+    const handleTransactionCompleted = () => {
+      console.log('Transaction completed, refreshing dashboard data');
+      if (user) {
+        fetchDashboardData();
+      }
+    };
+
+    window.addEventListener('transactionCompleted', handleTransactionCompleted);
+    
+    return () => {
+      window.removeEventListener('transactionCompleted', handleTransactionCompleted);
+    };
   }, [user]);
 
   // Add a function to refresh data that can be called from other components

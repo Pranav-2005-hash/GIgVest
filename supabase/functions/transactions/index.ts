@@ -44,14 +44,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Set the auth header for the client
-    supabaseClient.auth.setSession({
-      access_token: authHeader.replace('Bearer ', ''),
-      refresh_token: '',
-    });
-
     // Get user from token
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
     
     if (authError || !user) {
       return new Response(

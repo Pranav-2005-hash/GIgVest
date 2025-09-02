@@ -37,6 +37,21 @@ const TransactionHistory = () => {
       fetchTransactions();
       fetchSavingsTotal();
     }
+
+    // Listen for transaction completion events to refresh the list
+    const handleTransactionCompleted = () => {
+      console.log('Transaction completed, refreshing transaction history');
+      if (user) {
+        fetchTransactions();
+        fetchSavingsTotal();
+      }
+    };
+
+    window.addEventListener('transactionCompleted', handleTransactionCompleted);
+    
+    return () => {
+      window.removeEventListener('transactionCompleted', handleTransactionCompleted);
+    };
   }, [user]);
 
   const fetchTransactions = async () => {

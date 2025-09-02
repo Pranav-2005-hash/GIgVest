@@ -20,6 +20,10 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 
+interface PaymentGatewayProps {
+  onTransactionSuccess?: () => void;
+}
+
 interface PaymentResult {
   success: boolean;
   transactionId: string;
@@ -45,7 +49,7 @@ interface PaymentResult {
   };
 }
 
-const PaymentGateway = () => {
+const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
   const [amount, setAmount] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
@@ -146,9 +150,20 @@ const PaymentGateway = () => {
         // Don't fail the payment if transaction logging fails
       }
       
+      // Trigger dashboard refresh by dispatching a custom event
+      window.dispatchEvent(new CustomEvent('transactionCompleted', { 
+        detail: { transactionId: data.transactionId } 
+      }));
+      
+      // Trigger dashboard refresh callback if provided
+      if (onTransactionSuccess) {
+        onTransactionSuccess();
+      }
+      
       // Send receipt email if user is authenticated
       if (user?.email) {
         try {
+          const { data: { session: emailSession } } = await supabase.auth.getSession();
           const emailResult = await supabase.functions.invoke('send-receipt', {
             body: {
               email: user.email,
@@ -161,7 +176,10 @@ const PaymentGateway = () => {
               timestamp: data.timestamp,
               blockchain: data.blockchain,
               savings: data.savings
-            }
+            },
+            headers: emailSession?.access_token ? {
+              Authorization: `Bearer ${emailSession.access_token}`,
+            } : {}
           });
           
           console.log('Email receipt result:', emailResult);
