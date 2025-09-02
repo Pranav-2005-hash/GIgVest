@@ -288,7 +288,10 @@ const SimulatorPage = () => {
             </TabsContent>
 
             <TabsContent value="payment">
-              <PaymentGateway />
+              <PaymentGateway onTransactionSuccess={() => {
+                // Refresh any simulator data if needed
+                console.log('Payment completed in simulator');
+              }} />
             </TabsContent>
 
             <TabsContent value="chatbot">

@@ -131,19 +131,24 @@ const PaymentGateway = ({ onTransactionSuccess }: PaymentGatewayProps) => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
-          await supabase.functions.invoke('transactions', {
+          const transactionResult = await supabase.functions.invoke('transactions', {
             body: {
               amount: data.originalAmount,
               category: 'Payment',
               date: new Date().toISOString().split('T')[0],
               description: `Payment Gateway Transaction - Card ****${data.cardLast4}`,
-              type: 'debit',
-              round_up_amount: data.roundUpAmount
+              type: 'debit'
             },
             headers: {
               Authorization: `Bearer ${session.access_token}`,
             }
           });
+          
+          if (transactionResult.error) {
+            console.error('Transaction save error:', transactionResult.error);
+          } else {
+            console.log('Transaction saved successfully:', transactionResult.data);
+          }
         }
       } catch (transactionError) {
         console.error('Error saving transaction:', transactionError);
