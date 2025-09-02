@@ -125,15 +125,22 @@ const PaymentGateway = () => {
       
       // Save transaction to database
       try {
-        await supabase.functions.invoke('transactions', {
-          body: {
-            amount: data.originalAmount,
-            category: 'Payment',
-            date: new Date().toISOString().split('T')[0],
-            description: `Payment Gateway Transaction - Card ****${data.cardLast4}`,
-            type: 'debit'
-          }
-        });
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await supabase.functions.invoke('transactions', {
+            body: {
+              amount: data.originalAmount,
+              category: 'Payment',
+              date: new Date().toISOString().split('T')[0],
+              description: `Payment Gateway Transaction - Card ****${data.cardLast4}`,
+              type: 'debit',
+              round_up_amount: data.roundUpAmount
+            },
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            }
+          });
+        }
       } catch (transactionError) {
         console.error('Error saving transaction:', transactionError);
         // Don't fail the payment if transaction logging fails
@@ -142,7 +149,7 @@ const PaymentGateway = () => {
       // Send receipt email if user is authenticated
       if (user?.email) {
         try {
-          await supabase.functions.invoke('send-receipt', {
+          const emailResult = await supabase.functions.invoke('send-receipt', {
             body: {
               email: user.email,
               transactionId: data.transactionId,
@@ -157,10 +164,20 @@ const PaymentGateway = () => {
             }
           });
           
-          toast({
-            title: 'Payment Successful',
-            description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt sent to ${user.email}`,
-          });
+          console.log('Email receipt result:', emailResult);
+          
+          if (emailResult.error) {
+            console.error('Receipt email error:', emailResult.error);
+            toast({
+              title: 'Payment Successful',
+              description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt email could not be sent.`,
+            });
+          } else {
+            toast({
+              title: 'Payment Successful',
+              description: `Transaction completed for ₹${data.totalAmount.toFixed(2)}. Receipt sent to ${user.email}`,
+            });
+          }
         } catch (emailError) {
           console.error('Error sending receipt:', emailError);
           toast({

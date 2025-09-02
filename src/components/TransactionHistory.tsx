@@ -41,8 +41,11 @@ const TransactionHistory = () => {
 
   const fetchTransactions = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('transactions', {
-        method: 'GET'
+        headers: session?.access_token ? {
+          Authorization: `Bearer ${session.access_token}`,
+        } : {}
       });
 
       if (error) {

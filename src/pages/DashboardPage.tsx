@@ -38,6 +38,13 @@ const DashboardPage = () => {
     }
   }, [user]);
 
+  // Add a function to refresh data that can be called from other components
+  const refreshDashboardData = () => {
+    if (user) {
+      fetchDashboardData();
+    }
+  };
+
   const fetchDashboardData = async () => {
     try {
       // Fetch savings data
@@ -48,9 +55,12 @@ const DashboardPage = () => {
         .eq('status', 'active')
         .single();
 
-      // Fetch recent transactions
+      // Fetch recent transactions with proper auth
+      const { data: { session } } = await supabase.auth.getSession();
       const { data: transactionsData } = await supabase.functions.invoke('transactions', {
-        method: 'GET'
+        headers: session?.access_token ? {
+          Authorization: `Bearer ${session.access_token}`,
+        } : {}
       });
 
       const transactions = transactionsData?.transactions || [];

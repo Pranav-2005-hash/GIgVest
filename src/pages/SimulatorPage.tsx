@@ -18,8 +18,10 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import AuthenticatedHeader from '@/components/AuthenticatedHeader';
 import PaymentGateway from '@/components/PaymentGateway';
-import FinancialChatbot from '@/components/FinancialChatbot';
+import FinancialChatBot from '@/components/FinancialChatbot';
 
 interface RoundUpResult {
   roundUpAmount: number;
@@ -39,6 +41,7 @@ const SimulatorPage = () => {
   const [roundUpResult, setRoundUpResult] = useState<RoundUpResult | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const calculateRoundUp = async () => {
     if (!amount || isNaN(Number(amount))) {
@@ -111,6 +114,7 @@ const SimulatorPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {user && <AuthenticatedHeader />}
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="text-center">
@@ -288,7 +292,7 @@ const SimulatorPage = () => {
             </TabsContent>
 
             <TabsContent value="chatbot">
-              <FinancialChatbot context="Round-up savings simulator and payment gateway" />
+              <FinancialChatBot context="Round-up savings simulator and payment gateway" />
             </TabsContent>
           </Tabs>
         </div>
